@@ -20,7 +20,7 @@ impl EchoNode {
 }
 
 impl Node<EchoPayload> for EchoNode {
-    fn init(&mut self, init: Init) -> Result<()> {
+    fn init(&mut self, _: Init) -> Result<()> {
         Ok(())
     }
 
