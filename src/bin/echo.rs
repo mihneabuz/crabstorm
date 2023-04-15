@@ -21,7 +21,6 @@ impl EchoNode {
 
 impl Node<EchoPayload> for EchoNode {
     fn init(&mut self, init: Init) -> Result<()> {
-        dbg!(init);
         Ok(())
     }
 
