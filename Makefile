@@ -10,7 +10,10 @@ broadcast-single:
 broadcast-multi:
 	./maelstrom/maelstrom test -w broadcast --bin ./target/debug/broadcast --node-count 5 --time-limit 20 --rate 10
 
-all: echo unique broadcast-single broadcast-multi
+counter:
+	./maelstrom/maelstrom test -w g-counter --bin ./target/debug/counter --node-count 3 --rate 100 --time-limit 20 --nemesis partition
+
+all: echo unique broadcast-single broadcast-multi counter
 
 serve:
 	./maelstrom/maelstrom serve
