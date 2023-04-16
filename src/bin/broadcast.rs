@@ -84,7 +84,7 @@ impl Node<BroadcastPayload> for BroadcastNode {
                 self.set.extend(messages.into_iter());
             }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         Ok(())
@@ -93,13 +93,15 @@ impl Node<BroadcastPayload> for BroadcastNode {
     fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
         for neigh in self.neigs.iter() {
             let seen = self.seen.get(neigh).unwrap();
-            sender.send(
-                neigh.clone(),
-                None,
-                BroadcastPayload::Gossip {
-                    messages: self.set.difference(seen).copied().collect(),
-                },
-            )?;
+            let to_send = self.set.difference(seen).copied().collect::<Vec<_>>();
+
+            if to_send.len() > 0 {
+                sender.send(
+                    neigh.clone(),
+                    None,
+                    BroadcastPayload::Gossip { messages: to_send },
+                )?;
+            }
         }
 
         Ok(())
@@ -108,7 +110,7 @@ impl Node<BroadcastPayload> for BroadcastNode {
 
 fn main() {
     Runtime::new(BroadcastNode::new())
-        .event(Duration::from_millis(500), ())
+        .event(Duration::from_millis(800), ())
         .run()
         .unwrap()
 }
