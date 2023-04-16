@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crabstorm::*;
@@ -21,12 +22,17 @@ enum BroadcastPayload {
         topology: HashMap<String, Vec<String>>,
     },
     TopologyOk,
+    Gossip {
+        messages: Vec<usize>,
+    },
 }
 
 struct BroadcastNode {
     id: String,
     neigs: Vec<String>,
     set: HashSet<usize>,
+
+    seen: HashMap<String, HashSet<usize>>,
 }
 
 impl BroadcastNode {
@@ -35,6 +41,7 @@ impl BroadcastNode {
             id: "".to_string(),
             neigs: Vec::new(),
             set: HashSet::new(),
+            seen: HashMap::new(),
         }
     }
 }
@@ -42,6 +49,11 @@ impl BroadcastNode {
 impl Node<BroadcastPayload> for BroadcastNode {
     fn oninit(&mut self, init: Init) -> Result<()> {
         self.id = init.node_id;
+        self.seen = HashMap::from_iter(
+            init.node_ids
+                .iter()
+                .map(|node| (node.clone(), HashSet::new())),
+        );
         self.neigs = init.node_ids;
         Ok(())
     }
@@ -64,15 +76,39 @@ impl Node<BroadcastPayload> for BroadcastNode {
             BroadcastPayload::Topology { mut topology } => {
                 self.neigs = topology.remove(&self.id).unwrap();
                 sender.send(dst, rply, BroadcastPayload::TopologyOk)?;
-            },
+            }
 
-            _ => { unreachable!() }
+            BroadcastPayload::Gossip { messages } => {
+                let seen = self.seen.get_mut(&dst).unwrap();
+                seen.extend(messages.iter().copied());
+                self.set.extend(messages.into_iter());
+            }
+
+            _ => unreachable!()
         };
+
+        Ok(())
+    }
+
+    fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
+        for neigh in self.neigs.iter() {
+            let seen = self.seen.get(neigh).unwrap();
+            sender.send(
+                neigh.clone(),
+                None,
+                BroadcastPayload::Gossip {
+                    messages: self.set.difference(seen).copied().collect(),
+                },
+            )?;
+        }
 
         Ok(())
     }
 }
 
 fn main() {
-    Runtime::new().run(BroadcastNode::new()).unwrap()
+    Runtime::new(BroadcastNode::new())
+        .event(Duration::from_millis(500), ())
+        .run()
+        .unwrap()
 }

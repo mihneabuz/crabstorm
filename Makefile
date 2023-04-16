@@ -7,6 +7,14 @@ unique:
 broadcast-single:
 	./maelstrom/maelstrom test -w broadcast --bin ./target/debug/broadcast --node-count 1 --time-limit 20 --rate 10
 
+broadcast-multi:
+	./maelstrom/maelstrom test -w broadcast --bin ./target/debug/broadcast --node-count 5 --time-limit 20 --rate 10
+
+all: echo unique broadcast-single broadcast-multi
+
+serve:
+	./maelstrom/maelstrom serve
+
 download:
 	wget https://github.com/jepsen-io/maelstrom/releases/download/v0.2.3/maelstrom.tar.bz2
 	tar -xvf maelstrom.tar.bz2

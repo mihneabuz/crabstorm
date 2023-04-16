@@ -1,9 +1,12 @@
-use std::io::{self, StdoutLock, Write};
 use anyhow::{Error, Result};
+use futures::io::{AsyncBufReadExt, BufReader};
+use futures::stream::{select_all, StreamExt};
+use futures::{select, FutureExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use smol::io::BufReader;
-use smol::prelude::*;
-use smol::Unblock;
+use smol::{Timer, Unblock};
+use std::io::{self, Write};
+use std::marker::PhantomData;
+use std::time::Duration;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message<Payload> {
@@ -37,51 +40,82 @@ pub struct Init {
     pub node_ids: Vec<String>,
 }
 
-pub struct Sender<'a> {
-    writer: StdoutLock<'a>,
+pub trait Node<Payload: DeserializeOwned + Serialize, Event = ()> {
+    fn oninit(&mut self, init: Init) -> Result<()>;
+    fn onmessage(&mut self, message: Message<Payload>, sender: &mut Sender) -> Result<()>;
+    fn onevent(&mut self, event: Event, sender: &mut Sender) -> Result<()>;
+}
+
+pub struct Sender {
     id: usize,
     node: String,
 }
 
-impl<'a> Sender<'a> {
-    pub fn send(&mut self, dst: String, rply: Option<usize>, payload: impl Serialize) -> Result<()> {
+impl Sender {
+    pub fn new() -> Self {
+        Self {
+            id: 0,
+            node: "".to_string(),
+        }
+    }
+
+    pub fn send(&mut self, dst: String, rply: Option<usize>, pl: impl Serialize) -> Result<()> {
+        let mut stdout = io::stdout().lock();
+
         let message = Message {
             src: self.node.clone(),
             dst,
             body: Body {
                 id: Some(self.id),
                 rply,
-                payload,
+                payload: pl,
             },
         };
 
         self.id += 1;
 
-        self.writer.write_all(&serde_json::to_vec(&message)?)?;
-        self.writer.write_all(b"\n")?;
+        stdout.write_all(&serde_json::to_vec(&message)?)?;
+        stdout.write_all(b"\n")?;
 
         Ok(())
     }
 }
 
-pub trait Node<Payload: DeserializeOwned + Serialize> {
-    fn oninit(&mut self, init: Init) -> Result<()>;
-    fn onmessage(&mut self, message: Message<Payload>, sender: &mut Sender) -> Result<()>;
+#[derive(Clone)]
+struct Interval<E> {
+    time: Duration,
+    event: E,
 }
 
-pub struct Runtime {}
+pub struct Runtime<P, E, N> {
+    node: N,
+    sender: Sender,
+    intervals: Vec<Interval<E>>,
+    _p: PhantomData<P>,
+}
 
-impl Runtime {
-    pub fn new() -> Self {
-        Self {}
+impl<P, E, N> Runtime<P, E, N>
+where
+    E: Copy,
+    P: DeserializeOwned + Serialize,
+    N: Node<P, E>,
+{
+    pub fn new(node: N) -> Self {
+        Self {
+            node,
+            sender: Sender::new(),
+            intervals: Vec::new(),
+            _p: PhantomData,
+        }
     }
 
-    pub fn run<P>(&mut self, mut node: impl Node<P>) -> Result<()>
-    where
-        P: DeserializeOwned + Serialize,
-    {
+    pub fn event(mut self, time: Duration, event: E) -> Self {
+        self.intervals.push(Interval { time, event });
+        self
+    }
+
+    pub fn run(&mut self) -> Result<()> {
         let mut input = BufReader::new(Unblock::new(io::stdin())).lines();
-        let stdout = io::stdout().lock();
 
         smol::block_on(async {
             let first = input.next().await.unwrap()?;
@@ -91,21 +125,35 @@ impl Runtime {
                 return Err(Error::msg("bad init message"));
             };
 
-            let mut sender = Sender {
-                writer: stdout,
-                id: 0,
-                node: init.node_id.clone(),
-            };
+            self.sender.node = init.node_id.clone();
 
-            node.oninit(init)?;
+            self.node.oninit(init)?;
+            self.sender
+                .send(init_message.src, init_message.body.id, InitPayload::InitOk)?;
 
-            sender.send(init_message.src, init_message.body.id, InitPayload::InitOk)?;
+            let mut intervals = select_all(
+                self.intervals
+                    .iter()
+                    .map(|i| StreamExt::map(Timer::interval(i.time), |_| i.event)),
+            );
 
-            let mut messages = input
-                .map(|s| -> Result<Message<P>> { serde_json::from_str(&s?).map_err(|e| e.into())});
+            loop {
+                select! {
+                    int = intervals.next() => {
+                        if let Some(event) = int {
+                            self.node.onevent(event, &mut self.sender)?;
+                        }
+                    },
 
-            while let Some(Ok(message)) = messages.next().await {
-                node.onmessage(message, &mut sender)?;
+                    res = input.next().fuse() => {
+                        if res.is_none() {
+                            break;
+                        }
+
+                        let message = serde_json::from_str(&res.unwrap()?)?;
+                        self.node.onmessage(message, &mut self.sender)?;
+                    }
+                }
             }
 
             Ok(())

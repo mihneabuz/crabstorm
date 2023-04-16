@@ -33,8 +33,13 @@ impl Node<EchoPayload> for EchoNode {
 
         Ok(())
     }
+
+    fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
+        Ok(())
+    }
+
 }
 
 fn main() {
-    Runtime::new().run(EchoNode::new()).unwrap()
+    Runtime::new(EchoNode::new()).run().unwrap()
 }

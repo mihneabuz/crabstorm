@@ -36,8 +36,12 @@ impl Node<UniquePayload> for UniqueNode {
 
         Ok(())
     }
+
+    fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn main() {
-    Runtime::new().run(UniqueNode::new()).unwrap()
+    Runtime::new(UniqueNode::new()).run().unwrap()
 }
