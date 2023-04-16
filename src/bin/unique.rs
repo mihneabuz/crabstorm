@@ -21,11 +21,11 @@ impl UniqueNode {
 }
 
 impl Node<UniquePayload> for UniqueNode {
-    fn init(&mut self, _: Init) -> Result<()> {
+    fn oninit(&mut self, _: Init) -> Result<()> {
         Ok(())
     }
 
-    fn step(&self, message: Message<UniquePayload>, sender: &mut Sender) -> Result<()> {
+    fn onmessage(&mut self, message: Message<UniquePayload>, sender: &mut Sender) -> Result<()> {
         let UniquePayload::Generate = message.body.payload else {
             return Err(Error::msg(format!("unexpected payload {:?}", message.body.payload)));
         };
@@ -39,5 +39,5 @@ impl Node<UniquePayload> for UniqueNode {
 }
 
 fn main() {
-    UniqueNode::new().run().unwrap();
+    Runtime::new().run(UniqueNode::new()).unwrap()
 }

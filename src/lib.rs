@@ -1,6 +1,9 @@
-use anyhow::{Result, Error};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::io::{self, BufRead, StdoutLock, Write};
+use std::io::{self, StdoutLock, Write};
+use anyhow::{Error, Result};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use smol::io::BufReader;
+use smol::prelude::*;
+use smol::Unblock;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message<Payload> {
@@ -49,7 +52,7 @@ impl<'a> Sender<'a> {
                 id: Some(self.id),
                 rply,
                 payload,
-            }
+            },
         };
 
         self.id += 1;
@@ -62,35 +65,50 @@ impl<'a> Sender<'a> {
 }
 
 pub trait Node<Payload: DeserializeOwned + Serialize> {
-    fn init(&mut self, init: Init) -> Result<()>;
-    fn step(&self, message: Message<Payload>, sender: &mut Sender) -> Result<()>;
+    fn oninit(&mut self, init: Init) -> Result<()>;
+    fn onmessage(&mut self, message: Message<Payload>, sender: &mut Sender) -> Result<()>;
+}
 
-    fn run(&mut self) -> Result<()> {
-        let mut stdin = io::stdin().lock().lines();
+pub struct Runtime {}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn run<P>(&mut self, mut node: impl Node<P>) -> Result<()>
+    where
+        P: DeserializeOwned + Serialize,
+    {
+        let mut input = BufReader::new(Unblock::new(io::stdin())).lines();
         let stdout = io::stdout().lock();
 
-        let first = stdin.next().unwrap()?;
-        let init_message: Message<InitPayload> = serde_json::from_str(&first)?;
+        smol::block_on(async {
+            let first = input.next().await.unwrap()?;
+            let init_message: Message<InitPayload> = serde_json::from_str(&first)?;
 
-        let InitPayload::Init(init) = init_message.body.payload else {
-            return Err(Error::msg("bad init message"));
-        };
+            let InitPayload::Init(init) = init_message.body.payload else {
+                return Err(Error::msg("bad init message"));
+            };
 
-        let mut sender = Sender {
-            writer: stdout,
-            id: 0,
-            node: init.node_id.clone(),
-        };
+            let mut sender = Sender {
+                writer: stdout,
+                id: 0,
+                node: init.node_id.clone(),
+            };
 
-        self.init(init)?;
+            node.oninit(init)?;
 
-        sender.send(init_message.src, init_message.body.id, InitPayload::InitOk)?;
+            sender.send(init_message.src, init_message.body.id, InitPayload::InitOk)?;
 
-        while let Some(Ok(str)) = stdin.next() {
-            let message = serde_json::from_str(&str)?;
-            self.step(message, &mut sender)?;
-        }
+            let mut messages = input
+                .map(|s| -> Result<Message<P>> { serde_json::from_str(&s?).map_err(|e| e.into())});
 
-        Ok(())
+            while let Some(Ok(message)) = messages.next().await {
+                node.onmessage(message, &mut sender)?;
+            }
+
+            Ok(())
+        })
     }
 }
