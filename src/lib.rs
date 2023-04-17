@@ -4,7 +4,7 @@ use futures::stream::{select_all, StreamExt};
 use futures::{select, FutureExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smol::{Timer, Unblock};
-use std::io::{self, Write};
+use std::io::{self, Write, StdoutLock};
 use std::marker::PhantomData;
 use std::time::Duration;
 
@@ -46,22 +46,22 @@ pub trait Node<Payload: DeserializeOwned + Serialize, Event = ()> {
     fn onevent(&mut self, event: Event, sender: &mut Sender) -> Result<()>;
 }
 
-pub struct Sender {
+pub struct Sender<'a> {
+    stdout: StdoutLock<'a>,
     id: usize,
     node: String,
 }
 
-impl Sender {
+impl<'a> Sender<'a> {
     pub fn new() -> Self {
         Self {
+            stdout: io::stdout().lock(),
             id: 0,
             node: "".to_string(),
         }
     }
 
     pub fn send(&mut self, dst: String, rply: Option<usize>, pl: impl Serialize) -> Result<()> {
-        let mut stdout = io::stdout().lock();
-
         let message = Message {
             src: self.node.clone(),
             dst,
@@ -74,10 +74,16 @@ impl Sender {
 
         self.id += 1;
 
-        stdout.write_all(&serde_json::to_vec(&message)?)?;
-        stdout.write_all(b"\n")?;
+        self.stdout.write_all(&serde_json::to_vec(&message)?)?;
+        self.stdout.write_all(b"\n")?;
 
         Ok(())
+    }
+}
+
+impl<'a> Default for Sender<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -87,14 +93,14 @@ struct Interval<E> {
     event: E,
 }
 
-pub struct Runtime<P, E, N> {
+pub struct Runtime<'a, P, E, N> {
     node: N,
-    sender: Sender,
+    sender: Sender<'a>,
     intervals: Vec<Interval<E>>,
     _p: PhantomData<P>,
 }
 
-impl<P, E, N> Runtime<P, E, N>
+impl<'a, P, E, N> Runtime<'a, P, E, N>
 where
     E: Copy,
     P: DeserializeOwned + Serialize,

@@ -95,7 +95,7 @@ impl Node<BroadcastPayload> for BroadcastNode {
             let seen = self.seen.get(neigh).unwrap();
             let to_send = self.set.difference(seen).copied().collect::<Vec<_>>();
 
-            if to_send.len() > 0 {
+            if !to_send.is_empty() {
                 sender.send(
                     neigh.clone(),
                     None,
