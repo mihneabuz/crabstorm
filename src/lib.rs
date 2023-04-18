@@ -4,7 +4,7 @@ use futures::stream::{select_all, StreamExt};
 use futures::{select, FutureExt};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smol::{Timer, Unblock};
-use std::io::{self, Write, StdoutLock};
+use std::io::{self, StdoutLock, Write};
 use std::marker::PhantomData;
 use std::time::Duration;
 

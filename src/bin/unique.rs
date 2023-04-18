@@ -27,12 +27,19 @@ impl Node<UniquePayload> for UniqueNode {
 
     fn onmessage(&mut self, message: Message<UniquePayload>, sender: &mut Sender) -> Result<()> {
         let UniquePayload::Generate = message.body.payload else {
-            return Err(Error::msg(format!("unexpected payload {:?}", message.body.payload)));
+            return Err(Error::msg(format!(
+                "unexpected payload {:?}",
+                message.body.payload
+            )));
         };
 
         let id = Ulid::new().to_string();
 
-        sender.send(message.src, message.body.id, UniquePayload::GenerateOk { id })?;
+        sender.send(
+            message.src,
+            message.body.id,
+            UniquePayload::GenerateOk { id },
+        )?;
 
         Ok(())
     }

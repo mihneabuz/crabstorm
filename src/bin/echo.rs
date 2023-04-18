@@ -25,8 +25,11 @@ impl Node<EchoPayload> for EchoNode {
     }
 
     fn onmessage(&mut self, message: Message<EchoPayload>, sender: &mut Sender) -> Result<()> {
-        let EchoPayload::Echo{ echo } = message.body.payload else {
-            return Err(Error::msg(format!("unexpected payload {:?}", message.body.payload)));
+        let EchoPayload::Echo { echo } = message.body.payload else {
+            return Err(Error::msg(format!(
+                "unexpected payload {:?}",
+                message.body.payload
+            )));
         };
 
         sender.send(message.src, message.body.id, EchoPayload::EchoOk { echo })?;
@@ -37,7 +40,6 @@ impl Node<EchoPayload> for EchoNode {
     fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
         Ok(())
     }
-
 }
 
 fn main() {

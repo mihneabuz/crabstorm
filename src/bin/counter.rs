@@ -16,18 +16,24 @@ enum CounterPayload {
     Read,
     ReadOk { value: usize },
     Gossip { value: usize },
+    GossipOk { value: usize },
 }
 
 struct CounterNode {
     id: String,
     acc: usize,
-    others: HashMap<String, usize>,
+
+    // this contains all the other nodes
+    // for every node we store 2 values
+    //  1. the counter we *currently* know the other node has
+    //  2. the latest value that the other node has confirmed to have received from us
+    others: HashMap<String, (usize, usize)>,
 }
 
 impl CounterNode {
     fn new() -> Self {
         Self {
-            id: "".to_string(),
+            id: String::default(),
             acc: 0,
             others: HashMap::new(),
         }
@@ -41,7 +47,7 @@ impl Node<CounterPayload> for CounterNode {
             init.node_ids
                 .into_iter()
                 .filter(|n| *n != self.id)
-                .map(|n| (n, 0)),
+                .map(|n| (n, (0, 0))),
         );
         Ok(())
     }
@@ -57,14 +63,22 @@ impl Node<CounterPayload> for CounterNode {
             }
 
             CounterPayload::Read => {
-                let value = self.acc + self.others.values().sum::<usize>();
+                let value = self.acc + self.others.values().map(|e| e.0).sum::<usize>();
                 sender.send(dst, rply, CounterPayload::ReadOk { value })?;
             }
 
             CounterPayload::Gossip { value } => {
                 self.others
+                    .entry(dst.clone())
+                    .and_modify(|(acc, _)| *acc = cmp::max(value, *acc));
+
+                sender.send(dst, rply, CounterPayload::GossipOk { value })?;
+            }
+
+            CounterPayload::GossipOk { value } => {
+                self.others
                     .entry(dst)
-                    .and_modify(|acc| *acc = cmp::max(value, *acc));
+                    .and_modify(|(_, confirmed)| *confirmed = cmp::max(value, *confirmed));
             }
 
             _ => unimplemented!(),
@@ -74,7 +88,7 @@ impl Node<CounterPayload> for CounterNode {
     }
 
     fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
-        for n in self.others.keys() {
+        for (n, _) in self.others.iter().filter(|(_, &(_, conf))| conf < self.acc) {
             sender.send(n.clone(), None, CounterPayload::Gossip { value: self.acc })?;
         }
 

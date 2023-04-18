@@ -13,7 +13,10 @@ broadcast-multi:
 counter:
 	./maelstrom/maelstrom test -w g-counter --bin ./target/debug/counter --node-count 3 --rate 100 --time-limit 20 --nemesis partition
 
-all: echo unique broadcast-single broadcast-multi counter
+logs-single:
+	./maelstrom/maelstrom test -w kafka --bin ./target/debug/logs --node-count 1 --concurrency 2n --time-limit 20 --rate 1000
+
+all: echo unique broadcast-single broadcast-multi counter logs-single
 
 serve:
 	./maelstrom/maelstrom serve
