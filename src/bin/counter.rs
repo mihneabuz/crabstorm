@@ -33,7 +33,7 @@ struct CounterNode {
 impl CounterNode {
     fn new() -> Self {
         Self {
-            id: "".to_string(),
+            id: String::default(),
             acc: 0,
             others: HashMap::new(),
         }
@@ -72,7 +72,7 @@ impl Node<CounterPayload> for CounterNode {
                     .entry(dst.clone())
                     .and_modify(|(acc, _)| *acc = cmp::max(value, *acc));
 
-                sender.send(dst, rply, CounterPayload::GossipOk{ value })?;
+                sender.send(dst, rply, CounterPayload::GossipOk { value })?;
             }
 
             CounterPayload::GossipOk { value } => {
@@ -88,7 +88,7 @@ impl Node<CounterPayload> for CounterNode {
     }
 
     fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
-        for n in self.others.iter().filter(|(_, &(_, conf))| conf < self.acc).map(|(n, _)| n) {
+        for (n, _) in self.others.iter().filter(|(_, &(_, conf))| conf < self.acc) {
             sender.send(n.clone(), None, CounterPayload::Gossip { value: self.acc })?;
         }
 

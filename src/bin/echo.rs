@@ -37,7 +37,6 @@ impl Node<EchoPayload> for EchoNode {
     fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
         Ok(())
     }
-
 }
 
 fn main() {
