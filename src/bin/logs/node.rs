@@ -93,7 +93,7 @@ impl Node<LogPayload> for LogNode {
             LogPayload::ListCommittedOffsets { keys } => {
                 let offsets = keys
                     .into_iter()
-                    .filter_map(|name| self.logs.get(&name).map(|log| (name, log.commited)))
+                    .filter_map(|name| self.logs.get(&name).map(|log| (name, log.commited())))
                     .collect();
 
                 sender.send(dst, rply, LogPayload::ListCommittedOffsetsOk { offsets })?;

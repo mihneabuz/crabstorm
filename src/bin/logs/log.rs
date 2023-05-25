@@ -1,49 +1,97 @@
-use std::cmp;
+mod old {
+    use std::cmp;
 
-pub struct Log {
-    pub commited: i32,
-    pub next: i32,
-    pub msgs: Vec<i32>,
-}
-
-impl Log {
-    pub fn push(&mut self, x: i32) -> i32 {
-        self.next += 1;
-        self.msgs.push(x);
-        self.next - 1
+    pub struct Log {
+        pub commited: i32,
+        pub next: i32,
+        pub msgs: Vec<i32>,
     }
 
-    pub fn poll(&self, offset: i32) -> Vec<(i32, i32)> {
-        let skip = cmp::max(offset - self.commited - 1, 0);
-
-        if skip >= self.msgs.len() as i32 {
-            return Vec::new();
+    impl Log {
+        pub fn push(&mut self, x: i32) -> i32 {
+            self.next += 1;
+            self.msgs.push(x);
+            self.next - 1
         }
 
-        let start = cmp::max(offset, self.commited + 1);
-        (start..).zip(self.msgs[skip as usize..].iter().copied()).collect()
-    }
+        pub fn poll(&self, offset: i32) -> Vec<(i32, i32)> {
+            let skip = cmp::max(offset - self.commited - 1, 0);
 
-    pub fn commit(&mut self, offset: i32) {
-        if offset <= self.commited {
-            return;
+            if skip >= self.msgs.len() as i32 {
+                return Vec::new();
+            }
+
+            let start = cmp::max(offset, self.commited + 1);
+            (start..)
+                .zip(self.msgs[skip as usize..].iter().copied())
+                .collect()
         }
 
-        let count = offset - self.commited;
-        self.msgs.drain(..count as usize);
-        self.commited = offset;
+        pub fn commit(&mut self, offset: i32) {
+            if offset <= self.commited {
+                return;
+            }
+
+            let count = offset - self.commited;
+            self.msgs.drain(..count as usize);
+            self.commited = offset;
+        }
+
+        pub fn commited(&self) -> i32 {
+            self.commited
+        }
+    }
+
+    impl Default for Log {
+        fn default() -> Self {
+            Self {
+                commited: 0,
+                next: 1,
+                msgs: Vec::new(),
+            }
+        }
     }
 }
 
-impl Default for Log {
-    fn default() -> Self {
-        Self {
-            commited: 0,
-            next: 1,
-            msgs: Vec::new(),
+mod vec {
+    pub struct Log {
+        inner: Vec<(i32, i32, bool)>,
+    }
+
+    impl Log {
+        pub fn push(&mut self, x: i32) -> i32 {
+            let idx = self.inner.last().map(|l| l.0).unwrap_or(0) + 1;
+            self.inner.push((idx, x, false));
+            idx
+        }
+
+        pub fn poll(&self, offset: i32) -> Vec<(i32, i32)> {
+            self.inner
+                .iter()
+                .copied()
+                .filter(|l| l.0 >= offset)
+                .take(20)
+                .map(|l| (l.0, l.1))
+                .collect()
+        }
+
+        pub fn commit(&mut self, offset: i32) {
+            self.inner.iter_mut().take_while(|l| l.0 <= offset).for_each(|l| l.2 = true)
+        }
+
+        pub fn commited(&self) -> i32 {
+            self.inner.iter().take_while(|l| l.2).last().map(|l| l.0).unwrap_or(0)
+        }
+    }
+
+    impl Default for Log {
+        fn default() -> Self {
+            Self { inner: Vec::new() }
         }
     }
 }
+
+pub use old::Log;
 
 mod tests {
     #[test]
