@@ -2,7 +2,6 @@ use std::cmp;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crabstorm::*;
@@ -40,8 +39,11 @@ impl CounterNode {
     }
 }
 
-impl Node<CounterPayload> for CounterNode {
-    fn oninit(&mut self, init: Init) -> Result<()> {
+impl Node for CounterNode {
+    type Payload = CounterPayload;
+    type Event = ();
+
+    fn init(&mut self, init: Init) {
         self.id = init.node_id;
         self.others.extend(
             init.node_ids
@@ -49,22 +51,21 @@ impl Node<CounterPayload> for CounterNode {
                 .filter(|n| *n != self.id)
                 .map(|n| (n, (0, 0))),
         );
-        Ok(())
     }
 
-    fn onmessage(&mut self, message: Message<CounterPayload>, sender: &mut Sender) -> Result<()> {
+    fn message(&mut self, message: Message<CounterPayload>, sender: Sender<CounterPayload>) {
         let dst = message.src;
         let rply = message.body.id;
 
         match message.body.payload {
             CounterPayload::Add { delta } => {
                 self.acc += delta;
-                sender.send(dst, rply, CounterPayload::AddOk)?;
+                sender.send(dst, rply, CounterPayload::AddOk);
             }
 
             CounterPayload::Read => {
                 let value = self.acc + self.others.values().map(|e| e.0).sum::<usize>();
-                sender.send(dst, rply, CounterPayload::ReadOk { value })?;
+                sender.send(dst, rply, CounterPayload::ReadOk { value });
             }
 
             CounterPayload::Gossip { value } => {
@@ -72,7 +73,7 @@ impl Node<CounterPayload> for CounterNode {
                     .entry(dst.clone())
                     .and_modify(|(acc, _)| *acc = cmp::max(value, *acc));
 
-                sender.send(dst, rply, CounterPayload::GossipOk { value })?;
+                sender.send(dst, rply, CounterPayload::GossipOk { value });
             }
 
             CounterPayload::GossipOk { value } => {
@@ -83,22 +84,18 @@ impl Node<CounterPayload> for CounterNode {
 
             _ => unimplemented!(),
         };
-
-        Ok(())
     }
 
-    fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
+    fn event(&mut self, _: (), sender: Sender<CounterPayload>) {
         for (n, _) in self.others.iter().filter(|(_, &(_, conf))| conf < self.acc) {
-            sender.send(n.clone(), None, CounterPayload::Gossip { value: self.acc })?;
+            sender.send(n.clone(), None, CounterPayload::Gossip { value: self.acc });
         }
-
-        Ok(())
     }
 }
 
 fn main() {
-    Runtime::new(CounterNode::new())
+    Runtime::new()
         .event(Duration::from_millis(800), ())
-        .run()
+        .run(CounterNode::new())
         .unwrap()
 }

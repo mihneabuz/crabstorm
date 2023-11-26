@@ -1,168 +1,205 @@
+mod node;
+
+pub use node::*;
+
+use std::{
+    fs::OpenOptions,
+    io::Stdin,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
 use anyhow::{Error, Result};
-use futures::io::{AsyncBufReadExt, BufReader};
-use futures::stream::{select_all, StreamExt};
-use futures::{select, FutureExt};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use smol::{Timer, Unblock};
-use std::io::{self, StdoutLock, Write};
-use std::marker::PhantomData;
-use std::time::Duration;
+use futures::{
+    io::Lines,
+    select,
+    stream::{select_all, StreamExt},
+    AsyncBufReadExt, FutureExt,
+};
+use inel::{io::RingBufReader, time::Interval, AsyncRingWriteExt};
+use serde::{Deserialize, Serialize};
+use tracing::{info, level_filters::LevelFilter};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Message<Payload> {
-    pub src: String,
-    #[serde(rename = "dest")]
-    pub dst: String,
-    pub body: Body<Payload>,
+pub struct InputHandler {
+    input: Lines<RingBufReader<Stdin>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Body<Payload> {
-    #[serde(rename = "msg_id")]
-    pub id: Option<usize>,
-    #[serde(rename = "in_reply_to")]
-    pub rply: Option<usize>,
-    #[serde(flatten)]
-    pub payload: Payload,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum InitPayload {
-    Init(Init),
-    InitOk,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Init {
-    pub node_id: String,
-    pub node_ids: Vec<String>,
-}
-
-pub trait Node<Payload: DeserializeOwned + Serialize, Event = ()> {
-    fn oninit(&mut self, init: Init) -> Result<()>;
-    fn onmessage(&mut self, message: Message<Payload>, sender: &mut Sender) -> Result<()>;
-    fn onevent(&mut self, event: Event, sender: &mut Sender) -> Result<()>;
-}
-
-pub struct Sender<'a> {
-    stdout: StdoutLock<'a>,
-    id: usize,
-    node: String,
-}
-
-impl<'a> Sender<'a> {
-    pub fn new() -> Self {
+impl InputHandler {
+    fn new() -> Self {
         Self {
-            stdout: io::stdout().lock(),
-            id: 0,
-            node: "".to_string(),
+            input: RingBufReader::new(std::io::stdin()).lines(),
         }
     }
 
-    pub fn send(&mut self, dst: String, rply: Option<usize>, pl: impl Serialize) -> Result<()> {
+    async fn next<P>(&mut self) -> Option<Message<P>>
+    where
+        for<'a> P: Deserialize<'a>,
+    {
+        self.input.next().await.map(|line| {
+            serde_json::from_str(&line.expect("Failed to read line"))
+                .expect("Failed to parse message")
+        })
+    }
+}
+
+struct OutputHandler<P> {
+    id: usize,
+    node: String,
+    sender: flume::Sender<(String, Option<usize>, P)>,
+    receiver: flume::Receiver<(String, Option<usize>, P)>,
+}
+
+impl<P> OutputHandler<P>
+where
+    P: Serialize,
+{
+    fn new(node: String) -> Self {
+        let (sender, receiver) = flume::unbounded();
+
+        Self {
+            id: 0,
+            node,
+            sender,
+            receiver,
+        }
+    }
+
+    fn sender(&self) -> Sender<P> {
+        Sender::new(self.sender.clone())
+    }
+
+    async fn write<M>(&mut self, (dst, reply, payload): (String, Option<usize>, M))
+    where
+        M: Serialize,
+    {
         let message = Message {
             src: self.node.clone(),
             dst,
             body: Body {
                 id: Some(self.id),
-                rply,
-                payload: pl,
+                reply,
+                payload,
             },
         };
 
         self.id += 1;
 
-        self.stdout.write_all(&serde_json::to_vec(&message)?)?;
-        self.stdout.write_all(b"\n")?;
+        let mut bytes = serde_json::to_vec(&message).expect("Failed to serialize message");
+        bytes.push(b'\n');
 
-        Ok(())
+        std::io::stdout()
+            .ring_write_all(bytes)
+            .await
+            .1
+            .expect("Failed to write message");
+    }
+
+    async fn flush(&mut self)
+    where
+        P: Serialize,
+    {
+        while let Ok(parts) = self.receiver.try_recv() {
+            self.write(parts).await;
+        }
     }
 }
 
-impl<'a> Default for Sender<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct Runtime<E> {
+    intervals: Vec<(Duration, E)>,
+    trace_file: Option<PathBuf>,
 }
 
-#[derive(Clone)]
-struct Interval<E> {
-    time: Duration,
-    event: E,
-}
-
-pub struct Runtime<'a, P, E, N> {
-    node: N,
-    sender: Sender<'a>,
-    intervals: Vec<Interval<E>>,
-    _p: PhantomData<P>,
-}
-
-impl<'a, P, E, N> Runtime<'a, P, E, N>
-where
-    E: Copy,
-    P: DeserializeOwned + Serialize,
-    N: Node<P, E>,
-{
-    pub fn new(node: N) -> Self {
+impl<E> Runtime<E> {
+    pub fn new() -> Self {
         Self {
-            node,
-            sender: Sender::new(),
             intervals: Vec::new(),
-            _p: PhantomData,
+            trace_file: None,
         }
     }
 
     pub fn event(mut self, time: Duration, event: E) -> Self {
-        self.intervals.push(Interval { time, event });
+        self.intervals.push((time, event));
         self
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        let mut input = BufReader::new(Unblock::new(io::stdin())).lines();
+    pub fn trace_file(mut self, file: impl AsRef<Path>) -> Self {
+        self.trace_file = Some(file.as_ref().to_owned());
+        self
+    }
 
-        smol::block_on(async {
-            let first = input.next().await.unwrap()?;
-            let init_message: Message<InitPayload> = serde_json::from_str(&first)?;
+    pub fn run<N, P>(self, mut node: N) -> Result<()>
+    where
+        E: Clone + 'static,
+        N: Node<Payload = P, Event = E> + 'static,
+        for<'a> P: Deserialize<'a> + Serialize,
+    {
+        if let Some(file) = self.trace_file {
+            let writer = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(file)
+                .unwrap();
+
+            tracing_subscriber::fmt()
+                .with_max_level(LevelFilter::INFO)
+                .with_writer(writer)
+                .compact()
+                .init();
+        }
+
+        info!("Starting node");
+
+        inel::block_on(async move {
+            let mut input = InputHandler::new();
+            let mut events = select_all(
+                self.intervals
+                    .into_iter()
+                    .map(|i| Interval::new(i.0).map(move |_| i.1.clone())),
+            );
+
+            let init_message = input.next::<InitPayload>().await.unwrap();
 
             let InitPayload::Init(init) = init_message.body.payload else {
                 return Err(Error::msg("bad init message"));
             };
 
-            self.sender.node = init.node_id.clone();
+            let mut output = OutputHandler::new(init.node_id.clone());
 
-            self.node.oninit(init)?;
-            self.sender
-                .send(init_message.src, init_message.body.id, InitPayload::InitOk)?;
+            node.init(init);
 
-            let mut intervals = select_all(
-                self.intervals
-                    .iter()
-                    .map(|i| StreamExt::map(Timer::interval(i.time), |_| i.event)),
-            );
+            output
+                .write((init_message.src, init_message.body.id, InitPayload::InitOk))
+                .await;
 
             loop {
-                select! {
-                    int = intervals.next() => {
-                        if let Some(event) = int {
-                            self.node.onevent(event, &mut self.sender)?;
-                        }
-                    },
+                output.flush().await;
 
-                    res = input.next().fuse() => {
-                        if res.is_none() {
+                select! {
+                    message = input.next().fuse() => {
+                        if let Some(message) = message {
+                            info!("Message");
+                            node.message(message, output.sender());
+                        } else {
                             break;
                         }
-
-                        let message = serde_json::from_str(&res.unwrap()?)?;
-                        self.node.onmessage(message, &mut self.sender)?;
                     }
-                }
+
+                    event = events.next() => {
+                        if let Some(event) = event {
+                            info!("Event");
+                            node.event(event, output.sender());
+                        }
+                    },
+                };
             }
 
             Ok(())
         })
+    }
+}
+
+impl<E> Default for Runtime<E> {
+    fn default() -> Self {
+        Self::new()
     }
 }

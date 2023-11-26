@@ -1,4 +1,3 @@
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -20,17 +19,15 @@ impl UniqueNode {
     }
 }
 
-impl Node<UniquePayload> for UniqueNode {
-    fn oninit(&mut self, _: Init) -> Result<()> {
-        Ok(())
-    }
+impl Node for UniqueNode {
+    type Payload = UniquePayload;
+    type Event = ();
 
-    fn onmessage(&mut self, message: Message<UniquePayload>, sender: &mut Sender) -> Result<()> {
+    fn init(&mut self, _: Init) {}
+
+    fn message(&mut self, message: Message<UniquePayload>, sender: Sender<UniquePayload>) {
         let UniquePayload::Generate = message.body.payload else {
-            return Err(Error::msg(format!(
-                "unexpected payload {:?}",
-                message.body.payload
-            )));
+            panic!("unexpected payload {:?}", message.body.payload);
         };
 
         let id = Ulid::new().to_string();
@@ -39,16 +36,12 @@ impl Node<UniquePayload> for UniqueNode {
             message.src,
             message.body.id,
             UniquePayload::GenerateOk { id },
-        )?;
-
-        Ok(())
+        );
     }
 
-    fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
-        Ok(())
-    }
+    fn event(&mut self, _: (), _: Sender<UniquePayload>) {}
 }
 
 fn main() {
-    Runtime::new(UniqueNode::new()).run().unwrap()
+    Runtime::new().run(UniqueNode::new()).unwrap()
 }

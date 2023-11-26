@@ -1,4 +1,3 @@
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 use crabstorm::*;
@@ -19,29 +18,25 @@ impl EchoNode {
     }
 }
 
-impl Node<EchoPayload> for EchoNode {
-    fn oninit(&mut self, _: Init) -> Result<()> {
-        Ok(())
-    }
+impl Node for EchoNode {
+    type Payload = EchoPayload;
+    type Event = ();
 
-    fn onmessage(&mut self, message: Message<EchoPayload>, sender: &mut Sender) -> Result<()> {
+    fn init(&mut self, _: Init) {}
+
+    fn message(&mut self, message: Message<EchoPayload>, sender: Sender<EchoPayload>) {
         let EchoPayload::Echo { echo } = message.body.payload else {
-            return Err(Error::msg(format!(
-                "unexpected payload {:?}",
-                message.body.payload
-            )));
+            panic!("unexpected payload {:?}", message.body.payload);
         };
 
-        sender.send(message.src, message.body.id, EchoPayload::EchoOk { echo })?;
-
-        Ok(())
+        sender.send(message.src, message.body.id, EchoPayload::EchoOk { echo });
     }
 
-    fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
-        Ok(())
-    }
+    fn event(&mut self, _: (), _: Sender<EchoPayload>) {}
 }
 
 fn main() {
-    Runtime::new(EchoNode::new()).run().unwrap()
+    Runtime::new()
+        .run(EchoNode::new())
+        .unwrap()
 }

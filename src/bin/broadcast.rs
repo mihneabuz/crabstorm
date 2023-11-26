@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use crabstorm::*;
@@ -46,8 +45,11 @@ impl BroadcastNode {
     }
 }
 
-impl Node<BroadcastPayload> for BroadcastNode {
-    fn oninit(&mut self, init: Init) -> Result<()> {
+impl Node for BroadcastNode {
+    type Payload = BroadcastPayload;
+    type Event = ();
+
+    fn init(&mut self, init: Init) {
         self.id = init.node_id;
         self.seen = HashMap::from_iter(
             init.node_ids
@@ -55,42 +57,39 @@ impl Node<BroadcastPayload> for BroadcastNode {
                 .map(|node| (node.clone(), HashSet::new())),
         );
         self.neigs = init.node_ids;
-        Ok(())
     }
 
-    fn onmessage(&mut self, message: Message<BroadcastPayload>, sender: &mut Sender) -> Result<()> {
+    fn message(&mut self, message: Message<BroadcastPayload>, sender: Sender<BroadcastPayload>) {
         let dst = message.src;
         let rply = message.body.id;
 
         match message.body.payload {
             BroadcastPayload::Broadcast { message } => {
                 self.set.insert(message);
-                sender.send(dst, rply, BroadcastPayload::BroadcastOk)?;
+                sender.send(dst, rply, BroadcastPayload::BroadcastOk);
             }
 
             BroadcastPayload::Read => {
                 let messages = self.set.iter().copied().collect();
-                sender.send(dst, rply, BroadcastPayload::ReadOk { messages })?;
+                sender.send(dst, rply, BroadcastPayload::ReadOk { messages });
             }
 
             BroadcastPayload::Topology { mut topology } => {
                 self.neigs = topology.remove(&self.id).unwrap();
-                sender.send(dst, rply, BroadcastPayload::TopologyOk)?;
+                sender.send(dst, rply, BroadcastPayload::TopologyOk);
             }
 
             BroadcastPayload::Gossip { messages } => {
                 let seen = self.seen.get_mut(&dst).unwrap();
                 seen.extend(messages.iter().copied());
-                self.set.extend(messages.into_iter());
+                self.set.extend(messages);
             }
 
             _ => unreachable!(),
         };
-
-        Ok(())
     }
 
-    fn onevent(&mut self, _: (), sender: &mut Sender) -> Result<()> {
+    fn event(&mut self, _: (), sender: Sender<BroadcastPayload>) {
         for neigh in self.neigs.iter() {
             let seen = self.seen.get(neigh).unwrap();
             let to_send = self.set.difference(seen).copied().collect::<Vec<_>>();
@@ -100,17 +99,15 @@ impl Node<BroadcastPayload> for BroadcastNode {
                     neigh.clone(),
                     None,
                     BroadcastPayload::Gossip { messages: to_send },
-                )?;
+                );
             }
         }
-
-        Ok(())
     }
 }
 
 fn main() {
-    Runtime::new(BroadcastNode::new())
+    Runtime::new()
         .event(Duration::from_millis(800), ())
-        .run()
+        .run(BroadcastNode::new())
         .unwrap()
 }

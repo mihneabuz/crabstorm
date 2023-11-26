@@ -1,4 +1,3 @@
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, unreachable};
 
@@ -48,13 +47,15 @@ impl LogNode {
     }
 }
 
-impl Node<LogPayload> for LogNode {
-    fn oninit(&mut self, init: Init) -> Result<()> {
+impl Node for LogNode {
+    type Payload = LogPayload;
+    type Event = ();
+
+    fn init(&mut self, init: Init) {
         self.id = init.node_id;
-        Ok(())
     }
 
-    fn onmessage(&mut self, message: Message<LogPayload>, sender: &mut Sender) -> Result<()> {
+    fn message(&mut self, message: Message<LogPayload>, sender: Sender<LogPayload>) {
         let dst = message.src;
         let rply = message.body.id;
 
@@ -63,7 +64,7 @@ impl Node<LogPayload> for LogNode {
                 let log = self.logs.entry(key).or_default();
                 let offset = log.push(msg);
 
-                sender.send(dst, rply, LogPayload::SendOk { offset })?;
+                sender.send(dst, rply, LogPayload::SendOk { offset });
             }
 
             LogPayload::Poll { offsets } => {
@@ -79,15 +80,17 @@ impl Node<LogPayload> for LogNode {
                     })
                     .collect();
 
-                sender.send(dst, rply, LogPayload::PollOk { msgs })?;
+                sender.send(dst, rply, LogPayload::PollOk { msgs });
             }
 
             LogPayload::CommitOffsets { offsets } => {
                 for (name, offset) in offsets {
-                    self.logs.get_mut(&name).map(|log| log.commit(offset));
+                    if let Some(log) = self.logs.get_mut(&name) {
+                        log.commit(offset);
+                    }
                 }
 
-                sender.send(dst, rply, LogPayload::CommitOffsetsOk)?;
+                sender.send(dst, rply, LogPayload::CommitOffsetsOk);
             }
 
             LogPayload::ListCommittedOffsets { keys } => {
@@ -96,16 +99,12 @@ impl Node<LogPayload> for LogNode {
                     .filter_map(|name| self.logs.get(&name).map(|log| (name, log.commited())))
                     .collect();
 
-                sender.send(dst, rply, LogPayload::ListCommittedOffsetsOk { offsets })?;
+                sender.send(dst, rply, LogPayload::ListCommittedOffsetsOk { offsets });
             }
 
             _ => unreachable!(),
         }
-
-        Ok(())
     }
 
-    fn onevent(&mut self, _: (), _: &mut Sender) -> Result<()> {
-        Ok(())
-    }
+    fn event(&mut self, _: (), _: Sender<LogPayload>) {}
 }
