@@ -84,7 +84,9 @@ impl Node<LogPayload> for LogNode {
 
             LogPayload::CommitOffsets { offsets } => {
                 for (name, offset) in offsets {
-                    self.logs.get_mut(&name).map(|log| log.commit(offset));
+                    if let Some(log) = self.logs.get_mut(&name) {
+                        log.commit(offset);
+                    }
                 }
 
                 sender.send(dst, rply, LogPayload::CommitOffsetsOk)?;

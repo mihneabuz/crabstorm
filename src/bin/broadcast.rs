@@ -81,7 +81,7 @@ impl Node<BroadcastPayload> for BroadcastNode {
             BroadcastPayload::Gossip { messages } => {
                 let seen = self.seen.get_mut(&dst).unwrap();
                 seen.extend(messages.iter().copied());
-                self.set.extend(messages.into_iter());
+                self.set.extend(messages);
             }
 
             _ => unreachable!(),
