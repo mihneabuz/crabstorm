@@ -18,7 +18,7 @@ use futures::{
 };
 use inel::{io::RingBufReader, time::Interval, AsyncRingWriteExt};
 use serde::{Deserialize, Serialize};
-use tracing::{info, level_filters::LevelFilter};
+use tracing::{debug, level_filters::LevelFilter};
 
 pub struct InputHandler {
     input: Lines<RingBufReader<Stdin>>,
@@ -107,6 +107,7 @@ where
 pub struct Runtime<E> {
     intervals: Vec<(Duration, E)>,
     trace_file: Option<PathBuf>,
+    trace_level: Option<LevelFilter>,
 }
 
 impl<E> Runtime<E> {
@@ -114,6 +115,7 @@ impl<E> Runtime<E> {
         Self {
             intervals: Vec::new(),
             trace_file: None,
+            trace_level: None,
         }
     }
 
@@ -127,6 +129,11 @@ impl<E> Runtime<E> {
         self
     }
 
+    pub fn trace_level(mut self, level: LevelFilter) -> Self {
+        self.trace_level = Some(level);
+        self
+    }
+
     pub fn run<N, P>(self, mut node: N) -> Result<()>
     where
         E: Clone + 'static,
@@ -136,18 +143,21 @@ impl<E> Runtime<E> {
         if let Some(file) = self.trace_file {
             let writer = OpenOptions::new()
                 .write(true)
+                .truncate(true)
                 .create(true)
                 .open(file)
-                .unwrap();
+                .expect("Failed to create trace file");
+
+            let level = self.trace_level.unwrap_or(LevelFilter::INFO);
 
             tracing_subscriber::fmt()
-                .with_max_level(LevelFilter::INFO)
+                .with_max_level(level)
                 .with_writer(writer)
                 .compact()
                 .init();
         }
 
-        info!("Starting node");
+        debug!("Starting node");
 
         inel::block_on(async move {
             let mut input = InputHandler::new();
@@ -177,7 +187,7 @@ impl<E> Runtime<E> {
                 select! {
                     message = input.next().fuse() => {
                         if let Some(message) = message {
-                            info!("Message");
+                            debug!("Message");
                             node.message(message, output.sender());
                         } else {
                             break;
@@ -186,7 +196,7 @@ impl<E> Runtime<E> {
 
                     event = events.next() => {
                         if let Some(event) = event {
-                            info!("Event");
+                            debug!("Event");
                             node.event(event, output.sender());
                         }
                     },
