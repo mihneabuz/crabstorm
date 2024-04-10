@@ -19,14 +19,6 @@ pub struct Body<Payload> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
-pub enum InitPayload {
-    Init(Init),
-    InitOk,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct Init {
     pub node_id: String,
     pub node_ids: Vec<String>,

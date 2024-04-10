@@ -36,7 +36,5 @@ impl Node for EchoNode {
 }
 
 fn main() {
-    Runtime::new()
-        .run(EchoNode::new())
-        .unwrap()
+    Runtime::new().run(EchoNode::new()).unwrap()
 }
