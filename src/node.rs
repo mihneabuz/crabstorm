@@ -20,8 +20,10 @@ pub struct Body<Payload> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Init {
-    pub node_id: String,
-    pub node_ids: Vec<String>,
+    #[serde(rename = "node_id")]
+    pub id: String,
+    #[serde(rename = "node_ids")]
+    pub neighbors: Vec<String>,
 }
 
 pub trait Node {

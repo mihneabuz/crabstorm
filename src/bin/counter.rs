@@ -44,9 +44,9 @@ impl Node for CounterNode {
     type Event = ();
 
     fn init(&mut self, init: Init) {
-        self.id = init.node_id;
+        self.id = init.id;
         self.others.extend(
-            init.node_ids
+            init.neighbors
                 .into_iter()
                 .filter(|n| *n != self.id)
                 .map(|n| (n, (0, 0))),
@@ -95,7 +95,7 @@ impl Node for CounterNode {
 
 fn main() {
     Runtime::new()
-        .event(Duration::from_millis(800), ())
+        .event(Duration::from_millis(100), ())
         .run(CounterNode::new())
         .unwrap()
 }

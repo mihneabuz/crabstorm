@@ -179,7 +179,7 @@ impl<E> Runtime<E> {
                 return Err(Error::msg("bad init message"));
             };
 
-            let mut output = OutputHandler::new(init_payload.node_id.clone());
+            let mut output = OutputHandler::new(init_payload.id.clone());
 
             node.init(init_payload);
 

@@ -52,7 +52,7 @@ impl Node for LogNode {
     type Event = ();
 
     fn init(&mut self, init: Init) {
-        self.id = init.node_id;
+        self.id = init.id;
     }
 
     fn message(&mut self, message: Message<LogPayload>, sender: Sender<LogPayload>) {

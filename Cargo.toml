@@ -16,6 +16,9 @@ name = "broadcast"
 name = "counter"
 
 [[bin]]
+name = "set"
+
+[[bin]]
 name = "logs"
 
 [dependencies]

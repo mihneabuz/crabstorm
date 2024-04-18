@@ -50,13 +50,13 @@ impl Node for BroadcastNode {
     type Event = ();
 
     fn init(&mut self, init: Init) {
-        self.id = init.node_id;
+        self.id = init.id;
         self.seen = HashMap::from_iter(
-            init.node_ids
+            init.neighbors
                 .iter()
                 .map(|node| (node.clone(), HashSet::new())),
         );
-        self.neigs = init.node_ids;
+        self.neigs = init.neighbors;
     }
 
     fn message(&mut self, message: Message<BroadcastPayload>, sender: Sender<BroadcastPayload>) {
@@ -107,7 +107,7 @@ impl Node for BroadcastNode {
 
 fn main() {
     Runtime::new()
-        .event(Duration::from_millis(800), ())
+        .event(Duration::from_millis(200), ())
         .run(BroadcastNode::new())
         .unwrap()
 }
