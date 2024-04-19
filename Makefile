@@ -33,6 +33,13 @@ set: set-bin
 	./maelstrom/maelstrom test -w g-set --bin ./target/debug/set --time-limit 10 --rate 100 --nemesis partition
 
 
+transactkv-bin:
+	cargo build --bin transactkv
+
+transactkv: transactkv-bin
+	./maelstrom/maelstrom test -w txn-list-append --bin ./target/debug/transactkv --time-limit 10 --node-count 1 --concurrency 10n --rate 100
+
+
 logs-bin:
 	cargo build --bin logs
 

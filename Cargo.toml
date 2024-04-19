@@ -19,6 +19,9 @@ name = "counter"
 name = "set"
 
 [[bin]]
+name = "transactkv"
+
+[[bin]]
 name = "logs"
 
 [dependencies]
