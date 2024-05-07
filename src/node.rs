@@ -32,7 +32,11 @@ pub trait Node {
 
     fn init(&mut self, init: Init);
     fn message(&mut self, message: Message<Self::Payload>, sender: Sender<Self::Payload>);
-    fn event(&mut self, event: Self::Event, sender: Sender<Self::Payload>);
+    fn event(&mut self, event: Self::Event, sender: Sender<Self::Payload>) {
+        drop(event);
+        drop(sender);
+        panic!("Unhandled event");
+    }
 }
 
 pub struct Sender<P> {

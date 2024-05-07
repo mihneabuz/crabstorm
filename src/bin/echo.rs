@@ -31,8 +31,6 @@ impl Node for EchoNode {
 
         sender.send(message.src, message.body.id, EchoPayload::EchoOk { echo });
     }
-
-    fn event(&mut self, _: (), _: Sender<EchoPayload>) {}
 }
 
 fn main() {

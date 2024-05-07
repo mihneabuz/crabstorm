@@ -19,6 +19,9 @@ name = "counter"
 name = "set"
 
 [[bin]]
+name = "linkv"
+
+[[bin]]
 name = "transactkv"
 
 [[bin]]

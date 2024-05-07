@@ -12,6 +12,13 @@ unique: unique-bin
 	./maelstrom/maelstrom test -w unique-ids --bin ./target/debug/unique --time-limit 30 --rate 1000 --node-count 5 --availability total --nemesis partition
 
 
+linkv-bin:
+	cargo build --bin unique
+
+linkv: linkv-bin
+	./maelstrom/maelstrom test -w lin-kv --bin ./target/debug/linkv --time-limit 10 --node-count 1 --concurrency 2n
+
+
 broadcast-bin:
 	cargo build --bin broadcast
 

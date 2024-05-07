@@ -56,6 +56,4 @@ impl Node for KvNode {
             _ => unreachable!(),
         }
     }
-
-    fn event(&mut self, _: (), _: Sender<KvPayload>) {}
 }

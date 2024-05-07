@@ -105,6 +105,4 @@ impl Node for LogNode {
             _ => unreachable!(),
         }
     }
-
-    fn event(&mut self, _: (), _: Sender<LogPayload>) {}
 }

@@ -38,8 +38,6 @@ impl Node for UniqueNode {
             UniquePayload::GenerateOk { id },
         );
     }
-
-    fn event(&mut self, _: (), _: Sender<UniquePayload>) {}
 }
 
 fn main() {
