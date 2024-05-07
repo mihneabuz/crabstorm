@@ -75,7 +75,7 @@ impl Node for SetNode {
 
 fn main() {
     Runtime::new()
-        .event(Duration::from_secs(5), ())
+        .event(Duration::from_secs(3), ())
         .run(SetNode::new())
         .unwrap()
 }

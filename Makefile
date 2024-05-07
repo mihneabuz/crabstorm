@@ -25,7 +25,7 @@ broadcast-bin:
 	cargo build $(build_flags) --bin broadcast
 
 broadcast: broadcast-bin
-	./maelstrom/maelstrom test -w broadcast --bin ./target/$(target)/broadcast $(test_flags) --node-count 5 --rate 10
+	./maelstrom/maelstrom test -w broadcast --bin ./target/$(target)/broadcast $(test_flags) --node-count 5 --rate 50 --nemesis partition
 
 
 counter-bin:
@@ -39,7 +39,7 @@ set-bin:
 	cargo build $(build_flags) --bin set
 
 set: set-bin
-	./maelstrom/maelstrom test -w g-set --bin ./target/$(target)/set $(test_flags) --rate 100 --nemesis partition
+	./maelstrom/maelstrom test -w g-set --bin ./target/$(target)/set $(test_flags) --node-count 5 --rate 200 --nemesis partition
 
 
 linkv-bin:
@@ -63,7 +63,7 @@ logs: logs-bin
 	./maelstrom/maelstrom test -w kafka --bin ./target/$(target)/logs $(test_flags) --node-count 1 --concurrency 2n --rate 1000
 
 
-all: echo unique broadcast counter set logs
+all: echo unique broadcast counter set
 
 
 serve:
