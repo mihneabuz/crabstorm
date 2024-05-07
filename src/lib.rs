@@ -1,4 +1,5 @@
 mod node;
+pub mod raft;
 mod runtime;
 mod value;
 

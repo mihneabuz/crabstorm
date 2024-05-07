@@ -46,7 +46,7 @@ impl Node for CounterNode {
     fn init(&mut self, init: Init) {
         self.id = init.id;
         self.others.extend(
-            init.neighbors
+            init.nodes
                 .into_iter()
                 .filter(|n| *n != self.id)
                 .map(|n| (n, (0, 0))),

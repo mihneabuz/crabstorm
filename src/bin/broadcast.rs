@@ -51,12 +51,9 @@ impl Node for BroadcastNode {
 
     fn init(&mut self, init: Init) {
         self.id = init.id;
-        self.seen = HashMap::from_iter(
-            init.neighbors
-                .iter()
-                .map(|node| (node.clone(), HashSet::new())),
-        );
-        self.neigs = init.neighbors;
+        self.seen =
+            HashMap::from_iter(init.nodes.iter().map(|node| (node.clone(), HashSet::new())));
+        self.neigs = init.nodes;
     }
 
     fn message(&mut self, message: Message<BroadcastPayload>, sender: Sender<BroadcastPayload>) {

@@ -8,17 +8,17 @@ use crabstorm::*;
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 enum SetPayload {
-    Add { element: usize },
+    Add { element: Value },
     AddOk,
     Read,
-    ReadOk { value: HashSet<usize> },
-    Replicate { elements: HashSet<usize> },
+    ReadOk { value: HashSet<Value> },
+    Replicate { elements: HashSet<Value> },
 }
 
 struct SetNode {
     id: String,
     neighbors: Vec<String>,
-    set: HashSet<usize>,
+    set: HashSet<Value>,
 }
 
 impl SetNode {
@@ -37,7 +37,7 @@ impl Node for SetNode {
 
     fn init(&mut self, init: Init) {
         self.id = init.id;
-        self.neighbors = init.neighbors;
+        self.neighbors = init.nodes;
     }
 
     fn message(&mut self, message: Message<SetPayload>, sender: Sender<SetPayload>) {

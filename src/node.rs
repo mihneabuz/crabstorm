@@ -23,7 +23,7 @@ pub struct Init {
     #[serde(rename = "node_id")]
     pub id: String,
     #[serde(rename = "node_ids")]
-    pub neighbors: Vec<String>,
+    pub nodes: Vec<String>,
 }
 
 pub trait Node {

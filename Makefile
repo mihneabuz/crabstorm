@@ -7,6 +7,10 @@ ifneq ($(target), debug)
 	test_flags = --time-limit 30
 endif
 
+ifeq ($(log), true)
+	test_flags += --log-stderr
+endif
+
 echo-bin:
 	cargo build $(build_flags) --bin echo
 
@@ -46,7 +50,7 @@ linkv-bin:
 	cargo build $(build_flags) --bin linkv
 
 linkv: linkv-bin
-	./maelstrom/maelstrom test -w lin-kv --bin ./target/$(target)/linkv $(test_flags) --node-count 1 --rate 20 --concurrency 2n
+	./maelstrom/maelstrom test -w lin-kv --bin ./target/$(target)/linkv $(test_flags) --node-count 5 --rate 1 --concurrency 2n
 
 
 transactkv-bin:
