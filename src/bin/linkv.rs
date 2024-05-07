@@ -14,7 +14,11 @@ enum LinkvPayload {
     WriteOk,
     Cas { key: Value, from: Value, to: Value },
     CasOk,
+    Error { code: usize },
 }
+
+const KEY_MISSING: usize = 20;
+const VALUE_MISMATCH: usize = 22;
 
 struct LinkvNode {
     store: HashMap<Value, Value>,
@@ -52,13 +56,21 @@ impl Node for LinkvNode {
             }
 
             LinkvPayload::Cas { key, from, to } => {
-                self.store.entry(key).and_modify(|value| {
+                let mut res = LinkvPayload::CasOk;
+
+                if let Some(value) = self.store.get_mut(&key) {
                     if *value == from {
                         *value = to;
+                    } else {
+                        res = LinkvPayload::Error {
+                            code: VALUE_MISMATCH,
+                        };
                     }
-                });
+                } else {
+                    res = LinkvPayload::Error { code: KEY_MISSING };
+                }
 
-                sender.send(dest, reply, LinkvPayload::CasOk);
+                sender.send(dest, reply, res);
             }
 
             _ => unreachable!(),

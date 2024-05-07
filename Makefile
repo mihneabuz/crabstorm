@@ -1,63 +1,66 @@
 target = debug
 
+test_flags = --time-limit 10
+
 ifneq ($(target), debug)
-	flags = --$(target)
+	build_flags = --$(target)
+	test_flags = --time-limit 30
 endif
 
 echo-bin:
-	cargo build $(flags) --bin echo
+	cargo build $(build_flags) --bin echo
 
 echo: echo-bin
-	./maelstrom/maelstrom test -w echo --bin ./target/$(target)/echo --node-count 10 --time-limit 10
+	./maelstrom/maelstrom test -w echo --bin ./target/$(target)/echo $(test_flags) --node-count 10 --rate 1000 --availability total --nemesis partition
 
 
 unique-bin:
-	cargo build $(flags) --bin unique
+	cargo build $(build_flags) --bin unique
 
 unique: unique-bin
-	./maelstrom/maelstrom test -w unique-ids --bin ./target/$(target)/unique --time-limit 30 --rate 1000 --node-count 5 --availability total --nemesis partition
-
-
-linkv-bin:
-	cargo build $(flags) --bin unique
-
-linkv: linkv-bin
-	./maelstrom/maelstrom test -w lin-kv --bin ./target/$(target)/linkv --time-limit 10 --node-count 1 --concurrency 2n
+	./maelstrom/maelstrom test -w unique-ids --bin ./target/$(target)/unique $(test_flags) --rate 1000 --node-count 5 --availability total --nemesis partition
 
 
 broadcast-bin:
-	cargo build $(flags) --bin broadcast
+	cargo build $(build_flags) --bin broadcast
 
 broadcast: broadcast-bin
-	./maelstrom/maelstrom test -w broadcast --bin ./target/$(target)/broadcast --node-count 5 --time-limit 20 --rate 10
+	./maelstrom/maelstrom test -w broadcast --bin ./target/$(target)/broadcast $(test_flags) --node-count 5 --rate 10
 
 
 counter-bin:
-	cargo build $(flags) --bin counter
+	cargo build $(build_flags) --bin counter
 
 counter: counter-bin
-	./maelstrom/maelstrom test -w g-counter --bin ./target/$(target)/counter --node-count 5 --rate 100 --time-limit 20 --nemesis partition
+	./maelstrom/maelstrom test -w g-counter --bin ./target/$(target)/counter $(test_flags) --node-count 5 --rate 100 --nemesis partition
 
 
 set-bin:
-	cargo build $(flags) --bin set
+	cargo build $(build_flags) --bin set
 
 set: set-bin
-	./maelstrom/maelstrom test -w g-set --bin ./target/$(target)/set --time-limit 10 --rate 100 --nemesis partition
+	./maelstrom/maelstrom test -w g-set --bin ./target/$(target)/set $(test_flags) --rate 100 --nemesis partition
+
+
+linkv-bin:
+	cargo build $(build_flags) --bin linkv
+
+linkv: linkv-bin
+	./maelstrom/maelstrom test -w lin-kv --bin ./target/$(target)/linkv $(test_flags) --node-count 1 --rate 20 --concurrency 2n
 
 
 transactkv-bin:
-	cargo build $(flags) --bin transactkv
+	cargo build $(build_flags) --bin transactkv
 
 transactkv: transactkv-bin
-	./maelstrom/maelstrom test -w txn-list-append --bin ./target/$(target)/transactkv --time-limit 10 --node-count 1 --concurrency 10n --rate 100
+	./maelstrom/maelstrom test -w txn-list-append --bin ./target/$(target)/transactkv $(test_flags) --node-count 1 --concurrency 10n --rate 100
 
 
 logs-bin:
-	cargo build $(flags) --bin logs
+	cargo build $(build_flags) --bin logs
 
 logs: logs-bin
-	./maelstrom/maelstrom test -w kafka --bin ./target/$(target)/logs --node-count 1 --concurrency 2n --time-limit 20 --rate 1000
+	./maelstrom/maelstrom test -w kafka --bin ./target/$(target)/logs $(test_flags) --node-count 1 --concurrency 2n --rate 1000
 
 
 all: echo unique broadcast counter set logs
