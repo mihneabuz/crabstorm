@@ -15,48 +15,73 @@ enum LinkvPayload {
     Cas { key: Value, from: Value, to: Value },
     CasOk,
     Error { code: usize },
-    Raft { rpc: raft::Rpc },
+    Raft { rpc: raft::Rpc<RaftCommand> },
 }
 
 #[derive(Clone, Debug)]
 enum LinkvEvent {
     RaftTick,
+    Debug,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum Command {
+    Write { key: Value, value: Value },
+    Cas { key: Value, from: Value, to: Value },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RaftCommand {
+    origin: String,
+    reply: (usize, String),
+    command: Command,
 }
 
 const KEY_MISSING: usize = 20;
 const VALUE_MISMATCH: usize = 22;
 
 macro_rules! error {
-    ($code:expr) => {
-        LinkvPayload::Error { code: $code }
+    ($e:expr) => {
+        LinkvPayload::Error { code: $e }
     };
 }
 
 struct LinkvNode {
     store: HashMap<Value, Value>,
-    raft: Option<raft::Raft>,
+    raft: raft::Raft<RaftCommand>,
 }
 
 impl LinkvNode {
     fn new() -> Self {
         Self {
             store: HashMap::new(),
-            raft: None,
+            raft: raft::Raft::new("nop".to_string(), vec![]),
         }
     }
 
-    fn send_raft(&self, delivery: raft::Delivery, sender: Sender<LinkvPayload>) {
+    fn apply_raft(&mut self, command: RaftCommand, sender: &Sender<LinkvPayload>) {
+        if let Some(delivery) = self.raft.apply(command) {
+            self.send_raft(delivery, sender);
+        }
+    }
+
+    fn send_raft(&self, delivery: raft::Delivery<RaftCommand>, sender: &Sender<LinkvPayload>) {
         match delivery {
+            raft::Delivery::Unicast(dest, rpc) => {
+                sender.send(dest, None, LinkvPayload::Raft { rpc });
+            }
+
             raft::Delivery::Broadcast(rpc) => {
-                let raft = self.raft.as_ref().unwrap();
                 let payload = LinkvPayload::Raft { rpc };
-                for node in raft.nodes().iter().filter(|node| *node != raft.id()) {
+                for node in self.raft.others() {
                     sender.send(node.clone(), None, payload.clone());
                 }
             }
 
-            raft::Delivery::Unicast(dest, rpc) => {
-                sender.send(dest, None, LinkvPayload::Raft { rpc });
+            raft::Delivery::Multicast(rpcs) => {
+                for (dest, rpc) in rpcs.into_iter() {
+                    sender.send(dest, None, LinkvPayload::Raft { rpc });
+                }
             }
         }
     }
@@ -67,47 +92,74 @@ impl Node for LinkvNode {
     type Event = LinkvEvent;
 
     fn init(&mut self, init: Init) {
-        self.raft = Some(raft::Raft::new(init.id, init.nodes));
+        self.raft = raft::Raft::new(init.id, init.nodes);
     }
 
     fn message(&mut self, message: Message<LinkvPayload>, sender: Sender<LinkvPayload>) {
+        let id = message.body.id;
         let dest = message.src;
-        let reply = message.body.id;
 
         match message.body.payload {
             LinkvPayload::Read { key } => {
                 let value = self.store.get(&key).cloned();
-
-                sender.send(dest, reply, LinkvPayload::ReadOk { value });
+                sender.send(dest, id, LinkvPayload::ReadOk { value });
             }
 
             LinkvPayload::Write { key, value } => {
-                self.store.insert(key, value);
+                let command = RaftCommand {
+                    origin: self.raft.id().clone(),
+                    reply: (id.unwrap(), dest),
+                    command: Command::Write { key, value },
+                };
 
-                sender.send(dest, reply, LinkvPayload::WriteOk);
+                self.apply_raft(command, &sender);
             }
 
             LinkvPayload::Cas { key, from, to } => {
-                let mut res = LinkvPayload::CasOk;
+                let command = RaftCommand {
+                    origin: self.raft.id().clone(),
+                    reply: (id.unwrap(), dest),
+                    command: Command::Cas { key, from, to },
+                };
 
-                if let Some(value) = self.store.get_mut(&key) {
-                    if *value == from {
-                        *value = to;
-                    } else {
-                        res = error!(VALUE_MISMATCH);
-                    }
-                } else {
-                    res = error!(KEY_MISSING);
-                }
-
-                sender.send(dest, reply, res);
+                self.apply_raft(command, &sender);
             }
 
             LinkvPayload::Raft { rpc } => {
-                let raft = self.raft.as_mut().unwrap();
+                if let Some(delivery) = self.raft.process(dest, rpc) {
+                    self.send_raft(delivery, &sender);
+                }
 
-                if let Some(delivery) = raft.process(dest, rpc) {
-                    self.send_raft(delivery, sender);
+                while let Some(action) = self.raft.consume() {
+                    let (reply, dest) = action.reply;
+
+                    match action.command {
+                        Command::Write { key, value } => {
+                            self.store.insert(key.clone(), value.clone());
+
+                            if action.origin == *self.raft.id() {
+                                sender.send(dest, Some(reply), LinkvPayload::WriteOk);
+                            }
+                        }
+
+                        Command::Cas { key, from, to } => {
+                            let mut result = LinkvPayload::CasOk;
+
+                            if let Some(entry) = self.store.get_mut(&key) {
+                                if *entry == from {
+                                    *entry = to.clone();
+                                } else {
+                                    result = error!(VALUE_MISMATCH);
+                                }
+                            } else {
+                                result = error!(KEY_MISSING);
+                            }
+
+                            if action.origin == *self.raft.id() {
+                                sender.send(dest, Some(reply), result);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -118,9 +170,13 @@ impl Node for LinkvNode {
     fn event(&mut self, event: Self::Event, sender: Sender<LinkvPayload>) {
         match event {
             LinkvEvent::RaftTick => {
-                if let Some(delivery) = self.raft.as_mut().unwrap().tick() {
-                    self.send_raft(delivery, sender);
+                if let Some(delivery) = self.raft.tick() {
+                    self.send_raft(delivery, &sender);
                 }
+            }
+
+            LinkvEvent::Debug => {
+                eprintln!("STATE: {:?}", self.store);
             }
         };
     }
@@ -128,7 +184,8 @@ impl Node for LinkvNode {
 
 fn main() {
     Runtime::new()
-        .event(Duration::from_millis(200), LinkvEvent::RaftTick)
+        .event(Duration::from_millis(50), LinkvEvent::RaftTick)
+        .event(Duration::from_millis(1000), LinkvEvent::Debug)
         .run(LinkvNode::new())
         .unwrap()
 }
